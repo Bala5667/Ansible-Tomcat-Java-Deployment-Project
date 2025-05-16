@@ -1,74 +1,125 @@
-1. Preparing the Environment
-Transferred Key File:
-I securely transferred the AmazonLinux.pem (SSH private key) 
-to my master EC2 instance using WinSCP for authentication and secure access to the worker EC2 instance.
+Objective:
+Automate the setup of Java and Apache Tomcat on an EC2 instance and deploy a .war file using Ansible. I completed this project using both flat playbooks and a role-based structure to follow best practices and modularize the automation.
 
-Permission Configuration:
-I ensured the correct permissions for the PEM file using:
+🛠️ Step 1: Environment Setup
+I launched an Amazon Linux 2 EC2 instance from the AWS console.
 
-chmod 400 ~/worker-AmazonLinux.pem
+I made sure to open port 8080 in the security group so Tomcat could be accessed from a browser.
 
-SSH Verification:
-Before proceeding, I validated SSH connectivity from the master to the worker machine:
+I connected to the instance via SSH:
 
-ssh -i ~/worker-AmazonLinux.pem ec2-user@172.31.25.47
+ssh -i my-key.pem ec2-user@<EC2-PUBLIC-IP>
+Then, I installed Ansible:
 
-2. Ansible Inventory Setup
+sudo amazon-linux-extras install ansible2 -y
+📂 Step 2: Project Folder Setup
+I created a folder named ansible-java-tomcat-deploy to organize all my playbooks:
 
-I created an Ansible inventory file named inventory.ini to define the managed node:
+mkdir ansible-java-tomcat-deploy
+cd ansible-java-tomcat-deploy
+📝 Step 3: Ansible Flat Playbooks
+🔹 install_java.yml
+This playbook installs OpenJDK 11:
 
-nano inventory.ini
-
-Added the following configuration:
-
-[webservers]
-worker1 ansible_host=172.31.90.235 ansible_user=ec2-user ansible_ssh_private_key_file=~/AmazonLinux.pem
-
-3. Creating the main.yaml and Ansible Playbook.yaml
-
-I created a main.yaml playbook to automate NGINX installation:
-
-- name: Install Apache
-  yum:
-    name: httpd
-    state: present
-
-- name: Start Apache
-  service:
-    name: httpd
-    state: started
-
-I created a YAML playbook to automate NGINX installation:
-
-- name: Setup Apache Web Server using Role
+- name: Install Java
   hosts: localhost
   become: yes
-  roles:
-    - apache
+  tasks:
+    - name: Install OpenJDK 11
+      yum:
+        name: java-11-openjdk
+        state: present
+🔹 install_tomcat.yml
+This playbook sets up Apache Tomcat 9:
 
-The playbook included tasks to:
+- name: Install Apache Tomcat
+  hosts: localhost
+  become: yes
+  tasks:
+    - name: Create Tomcat user
+      user:
+        name: tomcat
+        shell: /bin/false
+        system: yes
 
-Update the package cache
+    - name: Download Tomcat
+      get_url:
+        url: https://archive.apache.org/dist/tomcat/tomcat-9/v9.0.85/bin/apache-tomcat-9.0.85.tar.gz
+        dest: /tmp/apache-tomcat.tar.gz
 
-1. Install NGINX
+    - name: Create Tomcat directory
+      file:
+        path: /opt/tomcat
+        state: directory
+        owner: tomcat
+        group: tomcat
+        mode: '0755'
 
-2. Start and enable the NGINX service
+    - name: Extract Tomcat
+      unarchive:
+        src: /tmp/apache-tomcat.tar.gz
+        dest: /opt/tomcat
+        remote_src: yes
+        extra_opts: ["--strip-components=1"]
 
-I executed the playbook using:
+    - name: Create Tomcat systemd service
+      copy:
+        dest: /etc/systemd/system/tomcat.service
+        content: |
+          [Unit]
+          Description=Apache Tomcat Web Application Container
+          After=network.target
 
-ansible-playbook -i inventory.ini install_nginx.yml
+          [Service]
+          Type=forking
+          User=tomcat
+          Group=tomcat
+          Environment="JAVA_HOME=/usr/lib/jvm/jre"
+          Environment="CATALINA_HOME=/opt/tomcat"
+          Environment="CATALINA_BASE=/opt/tomcat"
+          ExecStart=/opt/tomcat/bin/startup.sh
+          ExecStop=/opt/tomcat/bin/shutdown.sh
+          Restart=on-failure
 
-4. Verification
+          [Install]
+          WantedBy=multi-user.target
 
-Once the playbook ran successfully, I SSHed into the worker EC2 instance and checked the NGINX service status:
+    - name: Enable and start Tomcat
+      systemd:
+        name: tomcat
+        enabled: yes
+        state: started
+🔹 deploy_java.yml
+This playbook deploys a Java .war file to Tomcat:
 
-sudo systemctl status nginx
+- name: Deploy Java WAR file to Tomcat
+  hosts: localhost
+  become: yes
+  tasks:
+    - name: Copy WAR file to webapps directory
+      copy:
+        src: app.war
+        dest: /opt/tomcat/webapps/app.war
+        owner: tomcat
+        group: tomcat
+        mode: '0644'
 
-Verified the service was active and running, confirming successful deployment.
+    - name: Restart Tomcat to deploy the WAR
+      systemd:
+        name: tomcat
+        state: restarted
 
-Project Outcome:
+I placed the app.war file in the same folder (ansible-java-tomcat-deploy/) before running the playbook.
 
-This project demonstrates a complete Ansible automation cycle using a master-worker model. 
-It showcases how infrastructure can be configured remotely and securely through code. 
-By automating repetitive tasks like installing and configuring software, it significantly improves efficiency and reduces human error.
+▶️ Step 4: Running the Playbooks
+I ran each playbook one by one:
+
+ansible-playbook install_java.yml --connection=local
+ansible-playbook install_tomcat.yml --connection=local
+ansible-playbook deploy_java.yml --connection=local
+🌐 Step 5: Testing the Application
+I opened the app in the browser using:
+
+http://<EC2_PUBLIC_IP>:8080/app
+The application deployed successfully, and I was able to see the contents of the sample .war file.
 
