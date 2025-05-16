@@ -1,0 +1,16 @@
+- name: Deploy Java Application to Tomcat
+  hosts: localhost
+  become: yes
+  tasks:
+    - name: Copy WAR file to Tomcat webapps
+      copy:
+        src: app.war
+        dest: /opt/tomcat/webapps/app.war
+        owner: tomcat
+        group: tomcat
+        mode: '0644'
+
+    - name: Restart Tomcat to deploy the application
+      systemd:
+        name: tomcat
+        state: restarted

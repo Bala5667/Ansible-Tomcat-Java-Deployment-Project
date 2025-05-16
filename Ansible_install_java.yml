@@ -1,0 +1,9 @@
+# install_java.yml
+- name: Install Java on EC2
+  hosts: localhost
+  become: yes
+  tasks:
+    - name: Install Java (Amazon Corretto 11)
+      yum:
+        name: java-11-amazon-corretto
+        state: present

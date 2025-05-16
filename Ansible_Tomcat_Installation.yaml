@@ -1,0 +1,74 @@
+---
+- name: Install Apache Tomcat 
+  hosts: localhost
+  become: yes
+
+  tasks:
+    - name: Create Tomcat user
+      user:
+        name: tomcat
+        shell: /bin/false
+        system: yes
+
+    - name: Download Tomcat
+      get_url:
+        url: "https://archive.apache.org/dist/tomcat/tomcat-9/v9.0.85/bin/apache-tomcat-9.0.85.tar.gz"
+        dest: "/tmp/apache-tomcat-9.0.85.tar.gz"
+
+    - name: Create installation directory
+      file:
+        path: /opt/tomcat
+        state: directory
+        owner: tomcat
+        group: tomcat
+        mode: '0755'
+
+    - name: Extract Tomcat
+      unarchive:
+        src: "/tmp/apache-tomcat-9.0.85.tar.gz"
+        dest: /opt/tomcat
+        remote_src: yes
+        extra_opts: ["--strip-components=1"]
+
+    - name: Set Tomcat directory ownership
+      file:
+        path: /opt/tomcat
+        owner: tomcat
+        group: tomcat
+        recurse: yes
+
+    - name: Create systemd service file for Tomcat
+      copy:
+        dest: /etc/systemd/system/tomcat.service
+        content: |
+          [Unit]
+          Description=Apache Tomcat Web Application Container
+          After=network.target
+
+          [Service]
+          Type=forking
+          User=tomcat
+          Group=tomcat
+          Environment="JAVA_HOME=/usr/lib/jvm/jre"
+          Environment="CATALINA_PID=/opt/tomcat/temp/tomcat.pid"
+          Environment="CATALINA_HOME=/opt/tomcat"
+          Environment="CATALINA_BASE=/opt/tomcat"
+          ExecStart=/opt/tomcat/bin/startup.sh
+          ExecStop=/opt/tomcat/bin/shutdown.sh
+          Restart=on-failure
+
+          [Install]
+          WantedBy=multi-user.target
+      notify: restart tomcat
+
+    - name: Enable and start Tomcat
+      systemd:
+        name: tomcat
+        enabled: yes
+        state: started
+
+  handlers:
+    - name: restart tomcat
+      systemd:
+        name: tomcat
+        state: restarted
